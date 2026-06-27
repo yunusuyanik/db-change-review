@@ -6,7 +6,8 @@ import {
   analyzeFiles,
   generateMarkdownReport,
   type AnalyzedFile,
-  type MarkdownReportOptions
+  type MarkdownReportOptions,
+  type SqlDialect
 } from "@dbaops/db-change-review-core";
 
 const marker = "<!-- db-change-review-by-dbaops -->";
@@ -16,14 +17,15 @@ interface CliOptions {
   repo?: string;
   pr?: string;
   token?: string;
+  dialect: SqlDialect;
   commentOnClean: boolean;
 }
 
 function usage(): string {
   return [
     "Usage:",
-    "  db-change-review scan [--base origin/main]",
-    "  db-change-review comment --repo owner/name --pr 123 [--base origin/main]",
+    "  db-change-review scan [--base origin/main] [--dialect postgres|sqlserver|mysql|unknown]",
+    "  db-change-review comment --repo owner/name --pr 123 [--base origin/main] [--dialect postgres|sqlserver|mysql|unknown]",
     "",
     "Environment fallbacks:",
     "  GITHUB_REPOSITORY, GITHUB_TOKEN, GITHUB_EVENT_PATH"
@@ -36,6 +38,7 @@ function parseArgs(argv: string[]): { command: string; options: CliOptions } {
     base: "origin/main",
     token: process.env.GITHUB_TOKEN,
     repo: process.env.GITHUB_REPOSITORY,
+    dialect: parseDialect(process.env.DB_CHANGE_REVIEW_DIALECT),
     commentOnClean: process.env.DB_CHANGE_REVIEW_COMMENT_ON_CLEAN === "true"
   };
 
@@ -63,6 +66,11 @@ function parseArgs(argv: string[]): { command: string; options: CliOptions } {
       index += 1;
       continue;
     }
+    if (arg === "--dialect" && value) {
+      options.dialect = parseDialect(value);
+      index += 1;
+      continue;
+    }
     if (arg === "--comment-on-clean") {
       options.commentOnClean = true;
       continue;
@@ -77,6 +85,13 @@ function parseArgs(argv: string[]): { command: string; options: CliOptions } {
 
   options.pr ??= pullRequestNumberFromEvent();
   return { command, options };
+}
+
+function parseDialect(value: string | undefined): SqlDialect {
+  if (value === "postgres" || value === "sqlserver" || value === "mysql" || value === "unknown") {
+    return value;
+  }
+  return "postgres";
 }
 
 function pullRequestNumberFromEvent(): string | undefined {
@@ -152,7 +167,7 @@ function buildReport(options: CliOptions, reportOptions: MarkdownReportOptions =
 
   return generateMarkdownReport(
     analyzeFiles(files, {
-      dialect: "postgres",
+      dialect: options.dialect,
       failOn: "high"
     }),
     reportOptions

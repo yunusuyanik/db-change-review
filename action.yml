@@ -18,6 +18,10 @@ inputs:
     description: Comment even when no database-related files changed.
     required: false
     default: "false"
+  dialect:
+    description: SQL dialect to use for dialect-specific rules. Supported values: postgres, sqlserver, mysql, unknown.
+    required: false
+    default: postgres
 
 runs:
   using: composite
@@ -42,4 +46,5 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         DB_CHANGE_REVIEW_COMMENT_ON_CLEAN: ${{ inputs.comment-on-clean }}
-      run: node "${{ github.action_path }}/packages/cli/dist/index.js" comment --base "${{ inputs.base }}"
+        DB_CHANGE_REVIEW_DIALECT: ${{ inputs.dialect }}
+      run: node "${{ github.action_path }}/packages/cli/dist/index.js" comment --base "${{ inputs.base }}" --dialect "${{ inputs.dialect }}"

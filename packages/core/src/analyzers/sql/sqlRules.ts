@@ -131,6 +131,18 @@ export function analyzeSqlStatement(file: string, statement: SqlStatement, optio
     }));
   }
 
+  if (options.dialect === "postgres" && /^REINDEX\b/i.test(text) && !/\bCONCURRENTLY\b/i.test(text)) {
+    findings.push(finding({
+      ...base,
+      ruleId: "postgres.reindex_without_concurrently",
+      severity: "high",
+      category: "locking",
+      title: "Postgres REINDEX without CONCURRENTLY",
+      message: "REINDEX without CONCURRENTLY can block reads or writes while the index is rebuilt.",
+      suggestion: "Use REINDEX CONCURRENTLY where supported, and run it outside a transaction for production indexes."
+    }));
+  }
+
   if (options.dialect === "postgres" && /^ALTER\s+TABLE\b.*\bADD\s+COLUMN\b.*\bNOT\s+NULL\b/i.test(text)) {
     findings.push(finding({
       ...base,
@@ -180,6 +192,54 @@ export function analyzeSqlStatement(file: string, statement: SqlStatement, optio
       message: "Adding a CHECK constraint validates existing rows immediately.",
       suggestion: "Add the CHECK constraint NOT VALID, then validate it separately.",
       objectName: objectFrom(text, /^ALTER\s+TABLE\s+([^\s;]+)/i)
+    }));
+  }
+
+  if (options.dialect === "sqlserver" && /^CREATE\s+(UNIQUE\s+)?(CLUSTERED\s+|NONCLUSTERED\s+)?INDEX\b/i.test(text) && !/\bONLINE\s*=\s*ON\b/i.test(text)) {
+    findings.push(finding({
+      ...base,
+      ruleId: "sqlserver.create_index_without_online",
+      severity: "high",
+      category: "locking",
+      title: "SQL Server index created without ONLINE = ON",
+      message: "Creating or rebuilding indexes offline can block production reads or writes for the target table.",
+      suggestion: "For supported SQL Server editions and index types, use WITH (ONLINE = ON). If ONLINE is not supported, schedule the change or use a phased rollout."
+    }));
+  }
+
+  if (options.dialect === "sqlserver" && /^ALTER\s+INDEX\b.*\bREBUILD\b/i.test(text) && !/\bONLINE\s*=\s*ON\b/i.test(text)) {
+    findings.push(finding({
+      ...base,
+      ruleId: "sqlserver.rebuild_index_without_online",
+      severity: "high",
+      category: "locking",
+      title: "SQL Server index rebuild without ONLINE = ON",
+      message: "Offline index rebuilds can hold blocking locks for the duration of the rebuild.",
+      suggestion: "For supported SQL Server editions and index types, rebuild with ONLINE = ON or run the operation during a controlled maintenance window."
+    }));
+  }
+
+  if (options.dialect === "mysql" && /^ALTER\s+TABLE\b/i.test(text) && /\bALGORITHM\s*=\s*COPY\b/i.test(text)) {
+    findings.push(finding({
+      ...base,
+      ruleId: "mysql.alter_table_algorithm_copy",
+      severity: "high",
+      category: "locking",
+      title: "MySQL ALTER TABLE uses ALGORITHM=COPY",
+      message: "ALGORITHM=COPY can rebuild the table and take disruptive metadata locks on busy MySQL tables.",
+      suggestion: "Prefer ALGORITHM=INSTANT or ALGORITHM=INPLACE with LOCK=NONE where supported, or use an online schema change tool such as pt-online-schema-change or gh-ost."
+    }));
+  }
+
+  if (options.dialect === "mysql" && /^ALTER\s+TABLE\b/i.test(text) && !/\bALGORITHM\s*=\s*(INSTANT|INPLACE)\b/i.test(text) && !/\bLOCK\s*=\s*NONE\b/i.test(text)) {
+    findings.push(finding({
+      ...base,
+      ruleId: "mysql.alter_table_without_online_strategy",
+      severity: "medium",
+      category: "locking",
+      title: "MySQL ALTER TABLE without online strategy",
+      message: "ALTER TABLE may copy or lock the table depending on MySQL version, storage engine, and operation.",
+      suggestion: "Declare ALGORITHM=INSTANT or ALGORITHM=INPLACE with LOCK=NONE when supported, or use pt-online-schema-change or gh-ost for large production tables."
     }));
   }
 
